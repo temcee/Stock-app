@@ -3,3 +3,6 @@ yfinance
 pandas
 gspread
 google-auth
+requests
+openpyxl
+xlrd
