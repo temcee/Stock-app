@@ -49,6 +49,13 @@ def load_df(sheet):
 def save_df(sheet, df):
     save = df.copy()
     save["削除"] = save["削除"].astype(str)
+    # NaN・None・inf をすべて空文字に変換
+    save = save.fillna("")
+    # float型の整数値（1.0など）を整数に変換
+    for col in save.columns:
+        save[col] = save[col].apply(
+            lambda x: int(x) if isinstance(x, float) and x == int(x) else x
+        )
     sheet.clear()
     sheet.update([save.columns.tolist()] + save.values.tolist())
 
@@ -202,10 +209,11 @@ uploaded_file = st.file_uploader("code列を持つCSV", type="csv")
 
 if uploaded_file:
     add_df = pd.read_csv(uploaded_file)
-    if "code" not in add_df.columns:
-        st.error("CSVに code 列がありません")
+    if "code" not in add_df.columns and "コード" not in add_df.columns:
+        st.error("CSVに code 列または コード 列がありません")
     else:
-        for raw_code in add_df["code"]:
+        code_col = "code" if "code" in add_df.columns else "コード"
+        for raw_code in add_df[code_col]:
             code = normalize_code(raw_code)
             if code not in df["コード"].values:
                 name, price, per, pbr, roe, div = fetch_stock_data(code)
