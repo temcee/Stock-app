@@ -38,11 +38,12 @@ def get_sheet():
     return sheet
 
 def load_df(sheet):
-    records = sheet.get_all_records()
-    if records:
-        df = pd.DataFrame(records)
-    else:
-        df = pd.DataFrame(columns=COLUMNS)
+    values = sheet.get_all_values()
+    if len(values) <= 1:
+        return pd.DataFrame(columns=COLUMNS)
+    headers = values[0]
+    rows = values[1:]
+    df = pd.DataFrame(rows, columns=headers)
     return df
 
 def save_df(sheet, df):
