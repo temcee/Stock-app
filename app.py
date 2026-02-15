@@ -22,7 +22,6 @@ COLUMNS = ["コード", "銘柄名", "株価", "PER", "PBR", "ROE", "配当",
 # --------------------
 # Google Sheets接続
 # --------------------
-@st.cache_resource
 def get_sheet():
     creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
     creds = Credentials.from_service_account_info(
