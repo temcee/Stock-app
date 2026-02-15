@@ -76,7 +76,7 @@ def load_df(sheet, columns):
         df["削除"] = df["削除"].apply(lambda x: str(x).upper() == "TRUE")
     return df
 
-def save_df(sheet, df):
+def save_df(sheet, df, retries=3):
     save = df.copy()
     save = save.fillna("")
     for col in save.columns:
@@ -88,8 +88,16 @@ def save_df(sheet, df):
         save["削除"] = save["削除"].apply(
             lambda x: "TRUE" if x is True or str(x).upper() == "TRUE" else "FALSE"
         )
-    sheet.clear()
-    sheet.update([save.columns.tolist()] + save.values.tolist())
+    for attempt in range(retries):
+        try:
+            sheet.clear()
+            sheet.update([save.columns.tolist()] + save.values.tolist())
+            return
+        except gspread.exceptions.APIError:
+            if attempt < retries - 1:
+                time.sleep(5)
+            else:
+                raise
 
 # --------------------
 # 共通関数
