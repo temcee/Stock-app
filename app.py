@@ -17,15 +17,19 @@ from yfinance.exceptions import YFRateLimitError
 st.set_page_config(layout="wide")
 st.title("📈 株式銘柄管理ツール")
 
-SPREADSHEET_ID = "1noyNkmaeisqi96_xAFS-yo18pqtcWOu8yOpDzzOKnhg"
-SHEET_WATCH    = "シート1"
-SHEET_HOLDINGS = "holdings"
-SHEET_HISTORY  = "asset_history"
+SPREADSHEET_ID   = "1noyNkmaeisqi96_xAFS-yo18pqtcWOu8yOpDzzOKnhg"
+SHEET_WATCH      = "シート1"
+SHEET_HOLDINGS   = "holdings"
+SHEET_HISTORY    = "asset_history"
+SHEET_TRADES     = "trade_history"
+SHEET_SNAPSHOT   = "quarterly_snapshot"
 
 WATCH_COLS    = ["コード", "銘柄名", "株価", "PER", "PBR", "ROE", "配当",
                  "四季報", "タグ", "メモ", "目標株価", "削除"]
 HOLDING_COLS  = ["コード", "銘柄名", "取得単価", "枚数"]
 HISTORY_COLS  = ["日付", "総資産", "損益合計", "ルックスルー利益"]
+TRADE_COLS    = ["日付", "コード", "銘柄名", "売買", "単価", "枚数", "金額", "メモ"]
+SNAPSHOT_COLS = ["日付", "コード", "銘柄名", "株価", "PER", "PBR", "ROE(%)"]
 
 # --------------------
 # 東証銘柄名マスタ
@@ -174,15 +178,17 @@ def get_all_tags(df):
 # --------------------
 # シート接続
 # --------------------
-spreadsheet   = get_spreadsheet()
-watch_sheet   = get_or_create_sheet(spreadsheet, SHEET_WATCH,    WATCH_COLS)
-holding_sheet = get_or_create_sheet(spreadsheet, SHEET_HOLDINGS, HOLDING_COLS)
-history_sheet = get_or_create_sheet(spreadsheet, SHEET_HISTORY,  HISTORY_COLS)
+spreadsheet    = get_spreadsheet()
+watch_sheet    = get_or_create_sheet(spreadsheet, SHEET_WATCH,     WATCH_COLS)
+holding_sheet  = get_or_create_sheet(spreadsheet, SHEET_HOLDINGS,  HOLDING_COLS)
+history_sheet  = get_or_create_sheet(spreadsheet, SHEET_HISTORY,   HISTORY_COLS)
+trade_sheet    = get_or_create_sheet(spreadsheet, SHEET_TRADES,    TRADE_COLS)
+snapshot_sheet = get_or_create_sheet(spreadsheet, SHEET_SNAPSHOT,  SNAPSHOT_COLS)
 
 # --------------------
 # タブ
 # --------------------
-tab1, tab2 = st.tabs(["📋 ウォッチリスト", "💼 保有株"])
+tab1, tab2, tab3 = st.tabs(["📋 ウォッチリスト", "💼 保有株", "📒 売買履歴"])
 
 # ====================
 # TAB1: ウォッチリスト
@@ -380,6 +386,32 @@ with tab2:
         history_df = pd.concat([history_df, new_row], ignore_index=True)
         save_df(history_sheet, history_df)
 
+    # ----------
+    # 四半期スナップショット自動記録
+    # ----------
+    today = date.today()
+    is_quarter_end = today.month in [3, 6, 9, 12]
+    snapshot_df = load_df(snapshot_sheet, SNAPSHOT_COLS)
+    snapshot_df["日付"] = snapshot_df["日付"].astype(str)
+    quarter_key = f"{today.year}-Q{(today.month - 1) // 3 + 1}"
+    already_snapped = any(quarter_key in d for d in snapshot_df["日付"].values)
+
+    if is_quarter_end and not already_snapped and len(holding_df) > 0:
+        snap_rows = []
+        for _, row in holding_df.iterrows():
+            snap_rows.append({
+                "日付":   f"{today_str}({quarter_key})",
+                "コード": row["コード"],
+                "銘柄名": row["銘柄名"],
+                "株価":   round(float(row["株価"]), 0) if pd.notna(row["株価"]) else "",
+                "PER":    round(float(row["PER"]),  1) if pd.notna(row["PER"])  else "",
+                "PBR":    round(float(row["PBR"]),  1) if pd.notna(row["PBR"])  else "",
+                "ROE(%)": round(float(row["ROE(%)"]), 1) if pd.notna(row["ROE(%)"]) else "",
+            })
+        snapshot_df = pd.concat([snapshot_df, pd.DataFrame(snap_rows)], ignore_index=True)
+        save_df(snapshot_sheet, snapshot_df)
+        st.toast(f"📸 {quarter_key} の四半期スナップショットを記録しました")
+
     st.divider()
 
     # ----------
@@ -485,3 +517,120 @@ with tab2:
             st.info("指定期間のデータがありません")
     else:
         st.info("まだ記録がありません。保有株を登録するとアプリを開くたびに自動記録されます。")
+
+# ====================
+# TAB3: 売買履歴
+# ====================
+with tab3:
+    trade_df = load_df(trade_sheet, TRADE_COLS)
+
+    # ----------
+    # 売買記録の入力
+    # ----------
+    st.subheader("➕ 売買を記録")
+
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        t_date  = st.date_input("取引日", value=date.today())
+        t_code  = st.text_input("銘柄コード（例：7203）", key="trade_code")
+    with col_b:
+        t_type  = st.selectbox("売買", ["買い", "売り"])
+        t_price = st.number_input("単価（円）", min_value=0, value=0, step=1)
+    with col_c:
+        t_qty   = st.number_input("枚数", min_value=0, value=0, step=1)
+        t_memo  = st.text_input("メモ（任意）", key="trade_memo")
+
+    if st.button("売買を記録"):
+        if t_code and t_price > 0 and t_qty > 0:
+            code_n = normalize_code(t_code)
+            name_n, *_ = fetch_stock_data(code_n)
+            amount = t_price * t_qty
+            new_trade = pd.DataFrame([{
+                "日付":   t_date.isoformat(),
+                "コード": code_n,
+                "銘柄名": name_n or t_code,
+                "売買":   t_type,
+                "単価":   t_price,
+                "枚数":   t_qty,
+                "金額":   amount,
+                "メモ":   t_memo
+            }])
+            trade_df = pd.concat([trade_df, new_trade], ignore_index=True)
+            save_df(trade_sheet, trade_df)
+            st.success(f"{t_type}を記録しました（{code_n} {t_qty}枚 @{t_price:,}円）")
+            st.rerun()
+        else:
+            st.warning("銘柄コード・単価・枚数を入力してください")
+
+    st.divider()
+
+    # ----------
+    # 履歴一覧
+    # ----------
+    st.subheader("📒 売買履歴一覧")
+
+    if len(trade_df) > 0:
+        for col in ["単価", "枚数", "金額"]:
+            if col in trade_df.columns:
+                trade_df[col] = pd.to_numeric(trade_df[col], errors="coerce")
+
+        # 銘柄フィルター
+        codes = ["すべて"] + sorted(trade_df["コード"].unique().tolist())
+        filter_code = st.selectbox("銘柄で絞り込み", codes)
+        if filter_code != "すべて":
+            show_df = trade_df[trade_df["コード"] == filter_code]
+        else:
+            show_df = trade_df
+
+        show_df = show_df.sort_values("日付", ascending=False)
+
+        st.dataframe(
+            show_df,
+            use_container_width=True,
+            column_config={
+                "単価": st.column_config.NumberColumn(format="¥%.0f"),
+                "金額": st.column_config.NumberColumn(format="¥%.0f"),
+            }
+        )
+
+        # ----------
+        # 銘柄別損益集計
+        # ----------
+        st.divider()
+        st.subheader("📊 銘柄別 実現損益")
+
+        buy_df  = trade_df[trade_df["売買"] == "買い"].copy()
+        sell_df = trade_df[trade_df["売買"] == "売り"].copy()
+
+        summary_rows = []
+        for code in trade_df["コード"].unique():
+            b = buy_df[buy_df["コード"] == code]
+            s = sell_df[sell_df["コード"] == code]
+            buy_amount  = (b["単価"] * b["枚数"]).sum()
+            buy_qty     = b["枚数"].sum()
+            sell_amount = (s["単価"] * s["枚数"]).sum()
+            sell_qty    = s["枚数"].sum()
+            avg_cost    = buy_amount / buy_qty if buy_qty > 0 else 0
+            realized    = sell_amount - (avg_cost * sell_qty) if sell_qty > 0 else 0
+            name        = trade_df[trade_df["コード"] == code]["銘柄名"].iloc[0]
+            summary_rows.append({
+                "コード":     code,
+                "銘柄名":     name,
+                "買い枚数":   int(buy_qty),
+                "売り枚数":   int(sell_qty),
+                "保有枚数":   int(buy_qty - sell_qty),
+                "平均取得単価": round(avg_cost, 0),
+                "実現損益":   round(realized, 0),
+            })
+
+        summary_df = pd.DataFrame(summary_rows)
+        st.dataframe(
+            summary_df,
+            use_container_width=True,
+            column_config={
+                "平均取得単価": st.column_config.NumberColumn(format="¥%.0f"),
+                "実現損益":     st.column_config.NumberColumn(format="¥%.0f"),
+            }
+        )
+    else:
+        st.info("まだ売買履歴がありません")
