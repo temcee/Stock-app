@@ -146,11 +146,6 @@ def get_all_tags(df):
 sheet = get_sheet()
 df = load_df(sheet)
 
-# デバッグ表示（確認後に削除）
-st.write("読み込んだ列名:", df.columns.tolist())
-st.write("総行数:", len(df))
-st.write("メモ列の全件:", df["メモ"].tolist() if "メモ" in df.columns else "メモ列なし")
-
 # 列の保険 & 型補正
 defaults = {
     "銘柄名": "",
