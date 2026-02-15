@@ -308,30 +308,36 @@ with tab2:
     holding_df = load_df(holding_sheet, HOLDING_COLS)
     history_df = load_df(history_sheet, HISTORY_COLS)
 
+    # コードを正規化（.T付与）
+    if "コード" in holding_df.columns:
+        holding_df["コード"] = holding_df["コード"].apply(normalize_code)
+
     for col in ["取得単価", "枚数"]:
         if col in holding_df.columns:
             holding_df[col] = pd.to_numeric(holding_df[col], errors="coerce")
 
     # ----------
-    # 株価・指標を取得してDataFrameに結合
+    # 株価・指標・銘柄名を取得してDataFrameに結合
     # ----------
-    prices, pers, pbrs, roes, epss = {}, {}, {}, {}, {}
+    names, prices, pers, pbrs, roes, epss = {}, {}, {}, {}, {}, {}
     for _, row in holding_df.iterrows():
         c = row["コード"]
-        _, price, per, pbr, roe, _, eps = fetch_stock_data(c)
+        name, price, per, pbr, roe, _, eps = fetch_stock_data(c)
+        names[c]  = name or row.get("銘柄名", "")
         prices[c] = price or 0
         pers[c]   = per
         pbrs[c]   = pbr
         roes[c]   = roe
         epss[c]   = eps or 0
 
-    holding_df["株価"]  = holding_df["コード"].map(prices)
-    holding_df["PER"]   = holding_df["コード"].map(pers)
-    holding_df["PBR"]   = holding_df["コード"].map(pbrs)
-    holding_df["ROE(%)"]= holding_df["コード"].map(roes)
-    holding_df["時価"]  = holding_df["株価"] * holding_df["枚数"]
-    holding_df["損益"]  = (holding_df["株価"] - holding_df["取得単価"]) * holding_df["枚数"]
-    holding_df["EPS"]   = holding_df["コード"].map(epss)
+    holding_df["銘柄名"] = holding_df["コード"].map(names)
+    holding_df["株価"]   = holding_df["コード"].map(prices)
+    holding_df["PER"]    = holding_df["コード"].map(pers)
+    holding_df["PBR"]    = holding_df["コード"].map(pbrs)
+    holding_df["ROE(%)"] = holding_df["コード"].map(roes)
+    holding_df["時価"]   = holding_df["株価"] * holding_df["枚数"]
+    holding_df["損益"]   = (holding_df["株価"] - holding_df["取得単価"]) * holding_df["枚数"]
+    holding_df["EPS"]    = holding_df["コード"].map(epss)
     holding_df["ルックスルー利益"] = holding_df["EPS"] * holding_df["枚数"]
 
     # ----------
@@ -392,8 +398,9 @@ with tab2:
     )
 
     if st.button("保有株を保存"):
-        save_cols = ["コード", "銘柄名", "取得単価", "枚数"]
-        save_df(holding_sheet, edited_holding[save_cols])
+        save_holding = edited_holding[["コード", "銘柄名", "取得単価", "枚数"]].copy()
+        save_holding["コード"] = save_holding["コード"].apply(normalize_code)
+        save_df(holding_sheet, save_holding)
         st.success("保存しました")
         st.rerun()
 
