@@ -235,6 +235,10 @@ st.subheader("📊 登録銘柄一覧")
 sort_col = st.selectbox("並び替え", ["株価", "PER", "PBR", "ROE(%)", "配当"])
 ascending = st.checkbox("昇順", False)
 
+for col in ["株価", "PER", "PBR", "ROE", "配当"]:
+    if col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
 df = df.sort_values(
     by="ROE" if sort_col == "ROE(%)" else sort_col,
     ascending=ascending,
