@@ -6,3 +6,4 @@ google-auth
 requests
 openpyxl
 xlrd
+plotly
