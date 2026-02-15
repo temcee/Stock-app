@@ -64,18 +64,23 @@ def load_df(sheet):
     headers = values[0]
     rows = values[1:]
     df = pd.DataFrame(rows, columns=headers)
+    # 削除列をbool型に変換
+    if "削除" in df.columns:
+        df["削除"] = df["削除"].apply(lambda x: str(x).upper() == "TRUE")
     return df
 
 def save_df(sheet, df):
     save = df.copy()
-    save["削除"] = save["削除"].astype(str)
-    # NaN・None・inf をすべて空文字に変換
+    # NaN・None をすべて空文字に変換
     save = save.fillna("")
     # float型の整数値（1.0など）を整数に変換
     for col in save.columns:
-        save[col] = save[col].apply(
-            lambda x: int(x) if isinstance(x, float) and x == int(x) else x
-        )
+        if col != "削除":
+            save[col] = save[col].apply(
+                lambda x: int(x) if isinstance(x, float) and not pd.isna(x) and x == int(x) else x
+            )
+    # 削除列はTRUE/FALSEの文字列で保存
+    save["削除"] = save["削除"].apply(lambda x: "TRUE" if x is True or str(x).upper() == "TRUE" else "FALSE")
     sheet.clear()
     sheet.update([save.columns.tolist()] + save.values.tolist())
 
@@ -320,7 +325,7 @@ if st.button("編集内容を保存"):
     st.rerun()
 
 if st.button("選択した銘柄を削除"):
-    df = edited_df[edited_df["削除"].astype(str) != "True"]
+    df = edited_df[edited_df["削除"] != True]
     df["削除"] = False
     save_df(sheet, df)
     st.success("削除しました")
