@@ -4,6 +4,8 @@ import pandas as pd
 import time
 import json
 import gspread
+import requests
+import io
 from google.oauth2.service_account import Credentials
 from yfinance.exceptions import YFRateLimitError
 
@@ -18,6 +20,24 @@ SHEET_NAME = "stocks"
 
 COLUMNS = ["コード", "銘柄名", "株価", "PER", "PBR", "ROE", "配当",
            "四季報", "タグ", "メモ", "目標株価", "削除"]
+
+# --------------------
+# 東証銘柄名マスタ
+# --------------------
+@st.cache_data(ttl=86400)  # 1日キャッシュ
+def load_tse_master():
+    """東証の銘柄一覧から証券コード→日本語銘柄名の辞書を返す"""
+    try:
+        url = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+        r = requests.get(url, timeout=10)
+        xls = pd.read_excel(io.BytesIO(r.content), header=0)
+        # 列名を確認して証券コードと銘柄名を取得
+        code_col = [c for c in xls.columns if "コード" in str(c)][0]
+        name_col = [c for c in xls.columns if "銘柄名" in str(c)][0]
+        master = dict(zip(xls[code_col].astype(str).str.zfill(4), xls[name_col]))
+        return master
+    except Exception:
+        return {}
 
 # --------------------
 # Google Sheets接続
@@ -70,6 +90,15 @@ def fetch_stock_data(code):
         info = ticker.info
 
         name = info.get("longName") or info.get("shortName") or ""
+
+        # 日本株は東証マスタから日本語名を取得
+        if code.endswith(".T"):
+            raw = code.replace(".T", "").zfill(4)
+            master = load_tse_master()
+            jp_name = master.get(raw, "")
+            if jp_name:
+                name = jp_name
+
         price = info.get("currentPrice")
         per = info.get("trailingPE")
         pbr = info.get("priceToBook")
@@ -305,3 +334,16 @@ if st.button("全銘柄を更新"):
         df.loc[i, ["株価", "PER", "PBR", "ROE", "配当"]] = [price, per, pbr, roe, div]
     save_df(sheet, df)
     st.success("全銘柄を更新しました")
+
+if st.button("銘柄名を日本語に更新"):
+    master = load_tse_master()
+    for i, row in df.iterrows():
+        code = row["コード"]
+        if code.endswith(".T"):
+            raw = code.replace(".T", "").zfill(4)
+            jp_name = master.get(raw, "")
+            if jp_name:
+                df.loc[i, "銘柄名"] = jp_name
+    save_df(sheet, df)
+    st.success("日本語銘柄名に更新しました")
+    st.rerun()
