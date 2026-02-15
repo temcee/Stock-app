@@ -6,6 +6,7 @@ import json
 import gspread
 import requests
 import io
+import plotly.graph_objects as go
 from datetime import date
 from google.oauth2.service_account import Credentials
 from yfinance.exceptions import YFRateLimitError
@@ -434,7 +435,44 @@ with tab2:
         ].sort_values("日付")
 
         if len(filtered) > 0:
-            st.line_chart(filtered.set_index("日付")[["総資産", "損益合計"]])
+            fig = go.Figure()
+
+            # 総資産（左軸）
+            fig.add_trace(go.Scatter(
+                x=filtered["日付"],
+                y=filtered["総資産"],
+                name="総資産",
+                line=dict(color="#1f77b4", width=2),
+                yaxis="y1"
+            ))
+
+            # 損益合計（右軸）
+            fig.add_trace(go.Scatter(
+                x=filtered["日付"],
+                y=filtered["損益合計"],
+                name="損益合計",
+                line=dict(color="#ff7f0e", width=2),
+                yaxis="y2"
+            ))
+
+            fig.update_layout(
+                height=400,
+                margin=dict(l=10, r=10, t=30, b=10),
+                yaxis=dict(
+                    title="総資産（円）",
+                    tickformat=",",
+                    side="left"
+                ),
+                yaxis2=dict(
+                    title="損益合計（円）",
+                    tickformat=",",
+                    side="right",
+                    overlaying="y"
+                ),
+                legend=dict(orientation="h", y=1.1),
+                xaxis=dict(fixedrange=True),
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"staticPlot": True})
         else:
             st.info("指定期間のデータがありません")
     else:
