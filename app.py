@@ -48,7 +48,10 @@ def get_spreadsheet():
     creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
     creds = Credentials.from_service_account_info(
         creds_dict,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
     )
     client = gspread.authorize(creds)
     return client.open_by_key(SPREADSHEET_ID)
