@@ -339,13 +339,10 @@ with tab2:
     # ----------
     # 株価・指標・銘柄名を取得してDataFrameに結合
     # ----------
-    st.write("デバッグ: 保有銘柄数 =", len(holding_df))
     names, prices, pers, pbrs, roes, epss = {}, {}, {}, {}, {}, {}
-    for idx, row in holding_df.iterrows():
+    for _, row in holding_df.iterrows():
         c = row["コード"]
-        st.write(f"デバッグ: {c} を取得中...")
         name, price, per, pbr, roe, _, eps = fetch_stock_data(c)
-        st.write(f"  → 銘柄名={name}, 株価={price}")
         names[c]  = name or row.get("銘柄名", "")
         prices[c] = price or 0
         pers[c]   = per
@@ -562,7 +559,51 @@ with tab3:
             }])
             trade_df = pd.concat([trade_df, new_trade], ignore_index=True)
             save_df(trade_sheet, trade_df)
-            st.success(f"{t_type}を記録しました（{code_n} {t_qty}枚 @{t_price:,}円）")
+
+            # ----------
+            # 保有株を自動更新
+            # ----------
+            holding_df = load_df(holding_sheet, HOLDING_COLS)
+            if "コード" in holding_df.columns:
+                holding_df["コード"] = holding_df["コード"].apply(normalize_code)
+            for col in ["取得単価", "枚数"]:
+                if col in holding_df.columns:
+                    holding_df[col] = pd.to_numeric(holding_df[col], errors="coerce")
+
+            # 該当銘柄を探す
+            existing = holding_df[holding_df["コード"] == code_n]
+
+            if t_type == "買い":
+                if len(existing) > 0:
+                    # 既存銘柄：加重平均で取得単価を更新
+                    idx = existing.index[0]
+                    old_qty   = float(holding_df.loc[idx, "枚数"])
+                    old_cost  = float(holding_df.loc[idx, "取得単価"])
+                    new_qty   = old_qty + t_qty
+                    new_cost  = (old_cost * old_qty + t_price * t_qty) / new_qty
+                    holding_df.loc[idx, "枚数"] = new_qty
+                    holding_df.loc[idx, "取得単価"] = round(new_cost, 0)
+                else:
+                    # 新規銘柄
+                    holding_df = pd.concat([holding_df, pd.DataFrame([{
+                        "コード": code_n,
+                        "銘柄名": name_n or t_code,
+                        "取得単価": t_price,
+                        "枚数": t_qty
+                    }])], ignore_index=True)
+            else:  # 売り
+                if len(existing) > 0:
+                    idx = existing.index[0]
+                    old_qty = float(holding_df.loc[idx, "枚数"])
+                    new_qty = old_qty - t_qty
+                    if new_qty > 0:
+                        holding_df.loc[idx, "枚数"] = new_qty
+                    else:
+                        # 全株売却
+                        holding_df = holding_df.drop(idx)
+
+            save_df(holding_sheet, holding_df)
+            st.success(f"{t_type}を記録し、保有株を更新しました（{code_n} {t_qty}枚 @{t_price:,}円）")
             st.rerun()
         else:
             st.warning("銘柄コード・単価・枚数を入力してください")
