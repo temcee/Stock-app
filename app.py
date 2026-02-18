@@ -337,10 +337,13 @@ with tab2:
     # ----------
     # 株価・指標・銘柄名を取得してDataFrameに結合
     # ----------
+    st.write("デバッグ: 保有銘柄数 =", len(holding_df))
     names, prices, pers, pbrs, roes, epss = {}, {}, {}, {}, {}, {}
-    for _, row in holding_df.iterrows():
+    for idx, row in holding_df.iterrows():
         c = row["コード"]
+        st.write(f"デバッグ: {c} を取得中...")
         name, price, per, pbr, roe, _, eps = fetch_stock_data(c)
+        st.write(f"  → 銘柄名={name}, 株価={price}")
         names[c]  = name or row.get("銘柄名", "")
         prices[c] = price or 0
         pers[c]   = per
