@@ -127,9 +127,11 @@ def fetch_stock_data(code):
         div = info.get("dividendYield")
         eps = info.get("trailingEps")
         return name, price, per, pbr, roe, div, eps
-    except YFRateLimitError:
+    except YFRateLimitError as e:
+        st.warning(f"レート制限エラー: {code} - {str(e)}")
         return "", None, None, None, None, None, None
-    except Exception:
+    except Exception as e:
+        st.warning(f"データ取得エラー: {code} - {str(e)}")
         return "", None, None, None, None, None, None
 
 def normalize_tags(tag_str):
