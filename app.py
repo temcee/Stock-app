@@ -82,7 +82,7 @@ def load_df(sheet, columns):
         df["削除"] = df["削除"].apply(lambda x: str(x).upper() == "TRUE")
     return df
 
-def save_df(sheet, df, retries=3):
+def save_df(sheet, df, retries=5):
     save = df.copy()
     save = save.fillna("")
     for col in save.columns:
@@ -97,12 +97,15 @@ def save_df(sheet, df, retries=3):
     for attempt in range(retries):
         try:
             sheet.clear()
+            time.sleep(1)  # clear後に1秒待機
             sheet.update([save.columns.tolist()] + save.values.tolist())
             return
-        except gspread.exceptions.APIError:
+        except gspread.exceptions.APIError as e:
             if attempt < retries - 1:
-                time.sleep(5)
+                wait_time = (attempt + 1) * 3  # 3秒、6秒、9秒...と増加
+                time.sleep(wait_time)
             else:
+                st.error(f"Google Sheets APIエラー: {str(e)}")
                 raise
 
 # --------------------
@@ -143,10 +146,16 @@ def normalize_tags(tag_str):
 
 def normalize_code(code):
     code = str(code).strip().upper()
+    
+    # すでに市場コード(.T/.N/.S/.Fなど)が付いている場合はそのまま返す
     if "." in code:
         return code
-    if len(code) <= 5:
+    
+    # 日本株（4桁の数字）はデフォルトで.Tを付ける
+    if len(code) <= 5 and code.isdigit():
         return f"{code}.T"
+    
+    # 米国株などはそのまま返す
     return code
 
 def get_ir_links(code):
