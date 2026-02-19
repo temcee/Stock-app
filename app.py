@@ -96,16 +96,27 @@ def get_or_create_sheet(spreadsheet, name, columns, retries=3):
                 st.error(f"シート '{name}' の取得に失敗しました: {str(e)}")
                 raise
 
-def load_df(sheet, columns):
-    values = sheet.get_all_values()
-    if len(values) <= 1:
-        return pd.DataFrame(columns=columns)
-    headers = values[0]
-    rows = values[1:]
-    df = pd.DataFrame(rows, columns=headers)
-    if "削除" in df.columns:
-        df["削除"] = df["削除"].apply(lambda x: str(x).upper() == "TRUE")
-    return df
+def load_df(sheet, columns, retries=3):
+    for attempt in range(retries):
+        try:
+            time.sleep(0.5)  # 読み込み前に0.5秒待機
+            values = sheet.get_all_values()
+            if len(values) <= 1:
+                return pd.DataFrame(columns=columns)
+            headers = values[0]
+            rows = values[1:]
+            df = pd.DataFrame(rows, columns=headers)
+            if "削除" in df.columns:
+                df["削除"] = df["削除"].apply(lambda x: str(x).upper() == "TRUE")
+            return df
+        except gspread.exceptions.APIError as e:
+            if attempt < retries - 1:
+                wait_time = (attempt + 1) * 2
+                time.sleep(wait_time)
+            else:
+                st.error(f"データ読み込みエラー: {str(e)}")
+                st.info("Google Sheets APIのクォータ制限に達しました。1分待ってから再読み込みしてください。")
+                raise
 
 def save_df(sheet, df, retries=5):
     save = df.copy()
@@ -214,15 +225,19 @@ def get_all_tags(df):
     return sorted(tags)
 
 # --------------------
-# シート接続
+# シート接続（スプレッドシートのみ）
 # --------------------
-spreadsheet    = get_spreadsheet()
-watch_sheet    = get_or_create_sheet(spreadsheet, SHEET_WATCH,     WATCH_COLS)
-holding_sheet  = get_or_create_sheet(spreadsheet, SHEET_HOLDINGS,  HOLDING_COLS)
-history_sheet  = get_or_create_sheet(spreadsheet, SHEET_HISTORY,   HISTORY_COLS)
-trade_sheet    = get_or_create_sheet(spreadsheet, SHEET_TRADES,    TRADE_COLS)
-snapshot_sheet = get_or_create_sheet(spreadsheet, SHEET_SNAPSHOT,  SNAPSHOT_COLS)
-cash_sheet     = get_or_create_sheet(spreadsheet, SHEET_CASH,      CASH_COLS)
+spreadsheet = get_spreadsheet()
+
+# シートをsession_stateでキャッシュ
+if "sheets_loaded" not in st.session_state:
+    st.session_state.sheets_loaded = {}
+
+def get_cached_sheet(sheet_name, columns):
+    """シートをキャッシュから取得、なければ読み込んでキャッシュ"""
+    if sheet_name not in st.session_state.sheets_loaded:
+        st.session_state.sheets_loaded[sheet_name] = get_or_create_sheet(spreadsheet, sheet_name, columns)
+    return st.session_state.sheets_loaded[sheet_name]
 
 # --------------------
 # タブ
@@ -233,6 +248,7 @@ tab1, tab2, tab3 = st.tabs(["📋 ウォッチリスト", "💼 保有株", "�
 # TAB1: ウォッチリスト
 # ====================
 with tab1:
+    watch_sheet = get_cached_sheet(SHEET_WATCH, WATCH_COLS)
     watch_df = load_df(watch_sheet, WATCH_COLS)
 
     defaults = {"銘柄名": "", "四季報": 0, "配当": None,
@@ -378,6 +394,11 @@ with tab1:
 # TAB2: 保有株
 # ====================
 with tab2:
+    holding_sheet  = get_cached_sheet(SHEET_HOLDINGS, HOLDING_COLS)
+    history_sheet  = get_cached_sheet(SHEET_HISTORY,  HISTORY_COLS)
+    snapshot_sheet = get_cached_sheet(SHEET_SNAPSHOT, SNAPSHOT_COLS)
+    cash_sheet     = get_cached_sheet(SHEET_CASH,     CASH_COLS)
+    
     # ----------
     # 現金残高の取得
     # ----------
@@ -611,6 +632,10 @@ with tab2:
 # TAB3: 売買履歴
 # ====================
 with tab3:
+    trade_sheet   = get_cached_sheet(SHEET_TRADES,   TRADE_COLS)
+    holding_sheet = get_cached_sheet(SHEET_HOLDINGS, HOLDING_COLS)
+    cash_sheet    = get_cached_sheet(SHEET_CASH,     CASH_COLS)
+    
     trade_df = load_df(trade_sheet, TRADE_COLS)
 
     # ----------
