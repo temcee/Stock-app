@@ -23,15 +23,13 @@ SHEET_HOLDINGS   = "holdings"
 SHEET_HISTORY    = "asset_history"
 SHEET_TRADES     = "trade_history"
 SHEET_SNAPSHOT   = "quarterly_snapshot"
-SHEET_CASH       = "cash_balance"
 
 WATCH_COLS    = ["コード", "銘柄名", "株価", "PER", "PBR", "ROE", "配当",
                  "四季報", "タグ", "メモ", "目標株価", "削除"]
-HOLDING_COLS  = ["コード", "銘柄名", "取得単価", "枚数"]
+HOLDING_COLS  = ["コード", "銘柄名", "取得単価", "枚数", "現金残高"]  # 現金残高列を追加
 HISTORY_COLS  = ["日付", "総資産", "損益合計", "ルックスルー利益"]
 TRADE_COLS    = ["日付", "コード", "銘柄名", "売買", "単価", "枚数", "金額", "メモ"]
 SNAPSHOT_COLS = ["日付", "コード", "銘柄名", "株価", "PER", "PBR", "ROE(%)"]
-CASH_COLS     = ["現金残高"]
 
 # --------------------
 # 東証銘柄名マスタ
@@ -397,17 +395,23 @@ with tab2:
     holding_sheet  = get_cached_sheet(SHEET_HOLDINGS, HOLDING_COLS)
     history_sheet  = get_cached_sheet(SHEET_HISTORY,  HISTORY_COLS)
     snapshot_sheet = get_cached_sheet(SHEET_SNAPSHOT, SNAPSHOT_COLS)
-    cash_sheet     = get_cached_sheet(SHEET_CASH,     CASH_COLS)
     
     # ----------
-    # 現金残高の取得
+    # 保有株データ読み込み
     # ----------
-    cash_df = load_df(cash_sheet, CASH_COLS)
-    if len(cash_df) == 0:
-        cash_balance = 0
+    holding_df = load_df(holding_sheet, HOLDING_COLS)
+    history_df = load_df(history_sheet, HISTORY_COLS)
+    
+    # 現金残高行（コード='CASH'）を分離
+    cash_row = holding_df[holding_df["コード"] == "CASH"]
+    if len(cash_row) > 0:
+        cash_balance = pd.to_numeric(cash_row.iloc[0]["現金残高"], errors="coerce") or 0
     else:
-        cash_balance = pd.to_numeric(cash_df.iloc[0]["現金残高"], errors="coerce") or 0
-
+        cash_balance = 0
+    
+    # 保有株データ（現金行を除く）
+    holding_df = holding_df[holding_df["コード"] != "CASH"].copy()
+    
     st.subheader("💰 現金残高")
     col_cash1, col_cash2 = st.columns([3, 1])
     with col_cash1:
@@ -422,17 +426,19 @@ with tab2:
         st.write("")
         st.write("")
         if st.button("残高を更新"):
-            save_df(cash_sheet, pd.DataFrame([{"現金残高": new_cash}]))
+            # holdingsシート全体を読み込んで現金行だけ更新
+            all_holdings = load_df(holding_sheet, HOLDING_COLS)
+            if "CASH" in all_holdings["コード"].values:
+                all_holdings.loc[all_holdings["コード"] == "CASH", "現金残高"] = new_cash
+            else:
+                # 現金行が存在しない場合は追加
+                cash_row_new = pd.DataFrame([{"コード": "CASH", "銘柄名": "", "取得単価": "", "枚数": "", "現金残高": new_cash}])
+                all_holdings = pd.concat([all_holdings, cash_row_new], ignore_index=True)
+            save_df(holding_sheet, all_holdings)
             st.success(f"現金残高を ¥{new_cash:,} に更新しました")
             st.rerun()
 
     st.divider()
-
-    # ----------
-    # 保有株データ読み込み
-    # ----------
-    holding_df = load_df(holding_sheet, HOLDING_COLS)
-    history_df = load_df(history_sheet, HISTORY_COLS)
 
     # コードを正規化（.T付与）
     if "コード" in holding_df.columns:
@@ -634,7 +640,6 @@ with tab2:
 with tab3:
     trade_sheet   = get_cached_sheet(SHEET_TRADES,   TRADE_COLS)
     holding_sheet = get_cached_sheet(SHEET_HOLDINGS, HOLDING_COLS)
-    cash_sheet    = get_cached_sheet(SHEET_CASH,     CASH_COLS)
     
     trade_df = load_df(trade_sheet, TRADE_COLS)
 
@@ -728,18 +733,26 @@ with tab3:
                         # 全株売却
                         holding_df = holding_df.drop(idx)
 
-            save_df(holding_sheet, holding_df)
-
-            # ----------
-            # 現金を自動更新
-            # ----------
-            cash_df = load_df(cash_sheet, CASH_COLS)
-            current_cash = pd.to_numeric(cash_df.iloc[0]["現金残高"], errors="coerce") if len(cash_df) > 0 else 0
+            # 保有株を保存（現金行を除いて保存）
+            all_holdings_data = load_df(holding_sheet, HOLDING_COLS)
+            
+            # 現金行を取得
+            cash_rows = all_holdings_data[all_holdings_data["コード"] == "CASH"]
+            current_cash = 0
+            if len(cash_rows) > 0:
+                current_cash = pd.to_numeric(cash_rows.iloc[0]["現金残高"], errors="coerce") or 0
+            
+            # 現金を更新
             if t_type == "買い":
                 new_cash = current_cash - amount
             else:  # 売り
                 new_cash = current_cash + amount
-            save_df(cash_sheet, pd.DataFrame([{"現金残高": new_cash}]))
+            
+            # 保有株データ（現金行以外）と現金行を結合して保存
+            holding_df_without_cash = holding_df[holding_df["コード"] != "CASH"]
+            cash_row_new = pd.DataFrame([{"コード": "CASH", "銘柄名": "", "取得単価": "", "枚数": "", "現金残高": new_cash}])
+            final_holdings = pd.concat([holding_df_without_cash, cash_row_new], ignore_index=True)
+            save_df(holding_sheet, final_holdings)
 
             st.success(f"{t_type}を記録し、保有株・現金を更新しました（{code_n} {t_qty}枚 @{t_price:,}円）")
             st.rerun()
