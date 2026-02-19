@@ -78,13 +78,23 @@ def get_spreadsheet():
                 st.info("Google Sheets APIのクォータ制限に達した可能性があります。1分ほど待ってからページを再読み込みしてください。")
                 st.stop()
 
-def get_or_create_sheet(spreadsheet, name, columns):
-    try:
-        return spreadsheet.worksheet(name)
-    except gspread.WorksheetNotFound:
-        sheet = spreadsheet.add_worksheet(title=name, rows=1000, cols=20)
-        sheet.append_row(columns)
-        return sheet
+def get_or_create_sheet(spreadsheet, name, columns, retries=3):
+    for attempt in range(retries):
+        try:
+            time.sleep(1)  # 各シート取得前に1秒待機
+            return spreadsheet.worksheet(name)
+        except gspread.WorksheetNotFound:
+            sheet = spreadsheet.add_worksheet(title=name, rows=1000, cols=20)
+            sheet.append_row(columns)
+            return sheet
+        except gspread.exceptions.APIError as e:
+            if attempt < retries - 1:
+                wait_time = (attempt + 1) * 3
+                st.warning(f"シート '{name}' 取得リトライ中... ({attempt + 1}/{retries})")
+                time.sleep(wait_time)
+            else:
+                st.error(f"シート '{name}' の取得に失敗しました: {str(e)}")
+                raise
 
 def load_df(sheet, columns):
     values = sheet.get_all_values()
