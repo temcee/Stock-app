@@ -51,6 +51,7 @@ def load_tse_master():
 # --------------------
 # Google Sheets接続
 # --------------------
+@st.cache_resource(ttl=600)  # 10分間キャッシュ
 def get_spreadsheet():
     creds_dict = json.loads(st.secrets["GOOGLE_SERVICE_ACCOUNT"])
     creds = Credentials.from_service_account_info(
@@ -61,7 +62,21 @@ def get_spreadsheet():
         ]
     )
     client = gspread.authorize(creds)
-    return client.open_by_key(SPREADSHEET_ID)
+    
+    # リトライ処理を追加
+    for attempt in range(5):
+        try:
+            time.sleep(2)  # 接続前に2秒待機
+            return client.open_by_key(SPREADSHEET_ID)
+        except gspread.exceptions.APIError as e:
+            if attempt < 4:
+                wait_time = (attempt + 1) * 5  # 5秒、10秒、15秒...に延長
+                st.warning(f"接続リトライ中... ({attempt + 1}/5)")
+                time.sleep(wait_time)
+            else:
+                st.error(f"Google Sheetsへの接続エラー: {str(e)}")
+                st.info("Google Sheets APIのクォータ制限に達した可能性があります。1分ほど待ってからページを再読み込みしてください。")
+                st.stop()
 
 def get_or_create_sheet(spreadsheet, name, columns):
     try:
@@ -220,10 +235,26 @@ with tab1:
 
     # 銘柄追加
     st.subheader("➕ 銘柄を追加")
-    raw_code = st.text_input("銘柄コード（例：7203 / AAPL）")
-    code = normalize_code(raw_code)
+    
+    col_input1, col_input2 = st.columns([3, 1])
+    with col_input1:
+        raw_code = st.text_input("銘柄コード（例：7203、AAPL）")
+    with col_input2:
+        w_market = st.selectbox("市場", ["東証", "札証", "名証", "福証", "米国等"])
 
     if st.button("銘柄を追加"):
+        # 市場に応じてコードを正規化
+        if w_market == "東証":
+            code = f"{raw_code}.T" if not "." in raw_code and raw_code.isdigit() else raw_code.upper()
+        elif w_market == "札証":
+            code = f"{raw_code}.S"
+        elif w_market == "名証":
+            code = f"{raw_code}.N"
+        elif w_market == "福証":
+            code = f"{raw_code}.F"
+        else:  # 米国等
+            code = raw_code.upper()
+        
         name, price, per, pbr, roe, div, _ = fetch_stock_data(code)
         if code in watch_df["コード"].values:
             watch_df.loc[watch_df["コード"] == code, "四季報"] += 1
@@ -577,20 +608,34 @@ with tab3:
     # ----------
     st.subheader("➕ 売買を記録")
 
-    col_a, col_b, col_c = st.columns(3)
+    col_a, col_b, col_c, col_d = st.columns([2, 1, 2, 2])
     with col_a:
         t_date  = st.date_input("取引日", value=date.today())
-        t_code  = st.text_input("銘柄コード（例：7203）", key="trade_code")
     with col_b:
-        t_type  = st.selectbox("売買", ["買い", "売り"])
-        t_price = st.number_input("単価（円）", min_value=0, value=0, step=1)
+        t_market = st.selectbox("市場", ["東証", "札証", "名証", "福証", "米国等"], key="trade_market")
     with col_c:
+        t_code  = st.text_input("銘柄コード（例：7203、AAPL）", key="trade_code")
+        t_type  = st.selectbox("売買", ["買い", "売り"])
+    with col_d:
+        t_price = st.number_input("単価（円）", min_value=0, value=0, step=1)
         t_qty   = st.number_input("枚数", min_value=0, value=0, step=1)
-        t_memo  = st.text_input("メモ（任意）", key="trade_memo")
+    
+    t_memo  = st.text_input("メモ（任意）", key="trade_memo")
 
     if st.button("売買を記録"):
         if t_code and t_price > 0 and t_qty > 0:
-            code_n = normalize_code(t_code)
+            # 市場に応じてコードを正規化
+            if t_market == "東証":
+                code_n = f"{t_code}.T" if not "." in t_code and t_code.isdigit() else t_code.upper()
+            elif t_market == "札証":
+                code_n = f"{t_code}.S"
+            elif t_market == "名証":
+                code_n = f"{t_code}.N"
+            elif t_market == "福証":
+                code_n = f"{t_code}.F"
+            else:  # 米国等
+                code_n = t_code.upper()
+            
             name_n, *_ = fetch_stock_data(code_n)
             amount = t_price * t_qty
             new_trade = pd.DataFrame([{
