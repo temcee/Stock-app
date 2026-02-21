@@ -26,7 +26,7 @@ SHEET_SNAPSHOT   = "quarterly_snapshot"
 
 WATCH_COLS    = ["コード", "銘柄名", "株価", "PER", "PBR", "ROE", "配当",
                  "四季報", "タグ", "メモ", "目標株価", "削除"]
-HOLDING_COLS  = ["コード", "銘柄名", "取得単価", "枚数", "現金残高"]  # 現金残高列を追加
+HOLDING_COLS  = ["コード", "銘柄名", "株価", "取得単価", "枚数", "現金残高"]
 HISTORY_COLS  = ["日付", "総資産", "損益合計", "ルックスルー利益"]
 TRADE_COLS    = ["日付", "コード", "銘柄名", "売買", "単価", "枚数", "金額", "メモ"]
 SNAPSHOT_COLS = ["日付", "コード", "銘柄名", "株価", "PER", "PBR", "ROE(%)"]
@@ -452,8 +452,10 @@ with tab2:
     # 株価・指標・銘柄名を取得してDataFrameに結合
     # ----------
     names, prices, pers, pbrs, roes, epss = {}, {}, {}, {}, {}, {}
-    for _, row in holding_df.iterrows():
+    for idx, row in holding_df.iterrows():
         c = row["コード"]
+        if idx > 0:  # 2件目以降は追加で待機
+            time.sleep(1.5)
         name, price, per, pbr, roe, _, eps = fetch_stock_data(c)
         names[c]  = name or row.get("銘柄名", "")
         prices[c] = price or 0
@@ -558,8 +560,15 @@ with tab2:
     )
 
     if st.button("保有株を保存"):
-        save_holding = edited_holding[["コード", "銘柄名", "取得単価", "枚数"]].copy()
+        save_holding = edited_holding[["コード", "銘柄名", "株価", "取得単価", "枚数"]].copy()
         save_holding["コード"] = save_holding["コード"].apply(normalize_code)
+        
+        # 現金行を追加
+        all_holdings_data = load_df(holding_sheet, HOLDING_COLS)
+        cash_rows = all_holdings_data[all_holdings_data["コード"] == "CASH"]
+        if len(cash_rows) > 0:
+            save_holding = pd.concat([save_holding, cash_rows], ignore_index=True)
+        
         save_df(holding_sheet, save_holding)
         st.success("保存しました")
         st.rerun()
