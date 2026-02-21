@@ -604,40 +604,81 @@ with tab2:
         if len(filtered) > 0:
             fig = go.Figure()
 
-            # 総資産（左軸）
+            # 総資産（左軸）- 青色、丸マーカー
             fig.add_trace(go.Scatter(
                 x=filtered["日付"],
                 y=filtered["総資産"],
                 name="総資産",
-                line=dict(color="#1f77b4", width=2),
+                line=dict(color="#2E86DE", width=3),
+                mode='lines+markers',
+                marker=dict(size=8, symbol='circle'),
                 yaxis="y1"
             ))
 
-            # 損益合計（右軸）
+            # 損益合計（右軸）- オレンジ色、四角マーカー
             fig.add_trace(go.Scatter(
                 x=filtered["日付"],
                 y=filtered["損益合計"],
                 name="損益合計",
-                line=dict(color="#ff7f0e", width=2),
+                line=dict(color="#EE5A24", width=3),
+                mode='lines+markers',
+                marker=dict(size=8, symbol='square'),
                 yaxis="y2"
             ))
 
+            # Y軸の範囲を計算（余白を持たせる）
+            asset_min = filtered["総資産"].min()
+            asset_max = filtered["総資産"].max()
+            asset_range = asset_max - asset_min
+            asset_margin = asset_range * 0.1 if asset_range > 0 else asset_max * 0.1
+            
+            pnl_min = filtered["損益合計"].min()
+            pnl_max = filtered["損益合計"].max()
+            pnl_range = pnl_max - pnl_min
+            pnl_margin = pnl_range * 0.1 if pnl_range > 0 else abs(pnl_max) * 0.1
+            
+            # Y軸の目盛り間隔を計算（10等分）
+            asset_tick = (asset_max - asset_min + 2 * asset_margin) / 10
+            pnl_tick = (pnl_max - pnl_min + 2 * pnl_margin) / 10
+
             fig.update_layout(
-                height=400,
-                margin=dict(l=10, r=10, t=30, b=10),
+                height=450,
+                margin=dict(l=70, r=70, t=40, b=60),
+                xaxis=dict(
+                    title="日付",
+                    showgrid=True,
+                    gridcolor='lightgray',
+                    dtick=86400000,  # 1日ごと
+                    tickformat='%m/%d',
+                    fixedrange=True
+                ),
                 yaxis=dict(
                     title="総資産（円）",
                     tickformat=",",
-                    side="left"
+                    side="left",
+                    showgrid=True,
+                    gridcolor='lightgray',
+                    range=[asset_min - asset_margin, asset_max + asset_margin],
+                    dtick=asset_tick
                 ),
                 yaxis2=dict(
                     title="損益合計（円）",
                     tickformat=",",
                     side="right",
-                    overlaying="y"
+                    overlaying="y",
+                    showgrid=False,
+                    range=[pnl_min - pnl_margin, pnl_max + pnl_margin],
+                    dtick=pnl_tick
                 ),
-                legend=dict(orientation="h", y=1.1),
-                xaxis=dict(fixedrange=True),
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="center",
+                    x=0.5
+                ),
+                plot_bgcolor='white',
+                hovermode='x unified'
             )
             st.plotly_chart(fig, use_container_width=True, config={"staticPlot": True})
         else:
