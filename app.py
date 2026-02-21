@@ -637,13 +637,23 @@ with tab2:
             pnl_range = pnl_max - pnl_min
             pnl_margin = pnl_range * 0.1 if pnl_range > 0 else abs(pnl_max) * 0.1
             
-            # Y軸の目盛り間隔を計算（10等分）
-            asset_tick = (asset_max - asset_min + 2 * asset_margin) / 10
-            pnl_tick = (pnl_max - pnl_min + 2 * pnl_margin) / 10
+            # 目盛り間隔を計算して万単位に丸める
+            def round_to_nice(value):
+                """数値を綺麗な刻みに丸める（10万、50万、100万など）"""
+                if value == 0:
+                    return 10000
+                magnitude = 10 ** (len(str(int(abs(value)))) - 1)  # 桁数
+                candidates = [magnitude * x for x in [1, 2, 5, 10]]
+                # 10等分したときに近い値を選択
+                target = value / 8
+                return min(candidates, key=lambda x: abs(x - target))
+            
+            asset_tick = round_to_nice(asset_range + 2 * asset_margin)
+            pnl_tick = round_to_nice(pnl_range + 2 * pnl_margin)
 
             fig.update_layout(
                 height=450,
-                margin=dict(l=70, r=70, t=40, b=60),
+                margin=dict(l=80, r=80, t=40, b=60),
                 xaxis=dict(
                     title="日付",
                     showgrid=True,
@@ -654,7 +664,7 @@ with tab2:
                 ),
                 yaxis=dict(
                     title="総資産（円）",
-                    tickformat=",",
+                    tickformat=",.0f",
                     side="left",
                     showgrid=True,
                     gridcolor='lightgray',
@@ -663,7 +673,7 @@ with tab2:
                 ),
                 yaxis2=dict(
                     title="損益合計（円）",
-                    tickformat=",",
+                    tickformat=",.0f",
                     side="right",
                     overlaying="y",
                     showgrid=False,
