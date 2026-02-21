@@ -457,8 +457,10 @@ with tab2:
         if idx > 0:  # 2件目以降は追加で待機
             time.sleep(1.5)
         name, price, per, pbr, roe, _, eps = fetch_stock_data(c)
-        names[c]  = name or row.get("銘柄名", "")
-        prices[c] = price or 0
+        
+        # yfinanceで取得できた場合のみ更新、できない場合は既存値を保持
+        names[c]  = name if name else row.get("銘柄名", "")
+        prices[c] = price if price else (pd.to_numeric(row.get("株価"), errors="coerce") or 0)
         pers[c]   = per
         pbrs[c]   = pbr
         roes[c]   = roe
