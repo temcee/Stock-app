@@ -417,10 +417,10 @@ with tab2:
     with col_cash1:
         new_cash = st.number_input(
             "現金残高（円）",
-            min_value=0,
             value=int(cash_balance),
             step=10000,
-            key="cash_input"
+            key="cash_input",
+            help="マイナスも入力可能です"
         )
     with col_cash2:
         st.write("")
@@ -449,31 +449,21 @@ with tab2:
             holding_df[col] = pd.to_numeric(holding_df[col], errors="coerce")
 
     # ----------
-    # 株価・指標・銘柄名を取得してDataFrameに結合
+    # 株価・指標・銘柄名の処理（保存済みデータを使用）
     # ----------
-    names, prices, pers, pbrs, roes, epss = {}, {}, {}, {}, {}, {}
-    for idx, row in holding_df.iterrows():
-        c = row["コード"]
-        if idx > 0:  # 2件目以降は追加で待機
-            time.sleep(1.5)
-        name, price, per, pbr, roe, _, eps = fetch_stock_data(c)
-        
-        # yfinanceで取得できた場合のみ更新、できない場合は既存値を保持
-        names[c]  = name if name else row.get("銘柄名", "")
-        prices[c] = price if price else (pd.to_numeric(row.get("株価"), errors="coerce") or 0)
-        pers[c]   = per
-        pbrs[c]   = pbr
-        roes[c]   = roe
-        epss[c]   = eps or 0
-
-    holding_df["銘柄名"] = holding_df["コード"].map(names)
-    holding_df["株価"]   = holding_df["コード"].map(prices)
-    holding_df["PER"]    = holding_df["コード"].map(pers)
-    holding_df["PBR"]    = holding_df["コード"].map(pbrs)
-    holding_df["ROE(%)"] = holding_df["コード"].map(roes)
-    holding_df["時価"]   = holding_df["株価"] * holding_df["枚数"]
-    holding_df["損益"]   = (holding_df["株価"] - holding_df["取得単価"]) * holding_df["枚数"]
-    holding_df["EPS"]    = holding_df["コード"].map(epss)
+    # 既存の株価データを使用（yfinanceは手動更新時のみ）
+    for col in ["株価", "PER", "PBR", "ROE(%)"]:
+        if col in holding_df.columns:
+            holding_df[col] = pd.to_numeric(holding_df[col], errors="coerce")
+    
+    # EPSは簡易計算（PER × 株価）で代用
+    holding_df["EPS"] = holding_df.apply(
+        lambda row: row["株価"] / row["PER"] if pd.notna(row["PER"]) and row["PER"] > 0 else 0,
+        axis=1
+    )
+    
+    holding_df["時価"] = holding_df["株価"] * holding_df["枚数"]
+    holding_df["損益"] = (holding_df["株価"] - holding_df["取得単価"]) * holding_df["枚数"]
     holding_df["ルックスルー利益"] = holding_df["EPS"] * holding_df["枚数"]
 
     # ----------
@@ -573,6 +563,35 @@ with tab2:
         
         save_df(holding_sheet, save_holding)
         st.success("保存しました")
+        st.rerun()
+
+    if st.button("株価を更新"):
+        # 全銘柄の株価をyfinanceで取得
+        updated_df = holding_df.copy()
+        for idx, row in updated_df.iterrows():
+            c = row["コード"]
+            if idx > 0:
+                time.sleep(1.5)
+            name, price, per, pbr, roe, _, eps = fetch_stock_data(c)
+            if name:
+                updated_df.loc[idx, "銘柄名"] = name
+            if price:
+                updated_df.loc[idx, "株価"] = price
+            if per:
+                updated_df.loc[idx, "PER"] = per
+            if pbr:
+                updated_df.loc[idx, "PBR"] = pbr
+            if roe:
+                updated_df.loc[idx, "ROE(%)"] = roe
+        
+        # 現金行を追加して保存
+        all_holdings_data = load_df(holding_sheet, HOLDING_COLS)
+        cash_rows = all_holdings_data[all_holdings_data["コード"] == "CASH"]
+        save_data = updated_df[["コード", "銘柄名", "株価", "取得単価", "枚数"]]
+        if len(cash_rows) > 0:
+            save_data = pd.concat([save_data, cash_rows], ignore_index=True)
+        save_df(holding_sheet, save_data)
+        st.success("株価を更新しました")
         st.rerun()
 
     st.divider()
