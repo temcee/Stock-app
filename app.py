@@ -451,12 +451,16 @@ with tab2:
     # ----------
     # 株価・指標・銘柄名の処理（保存済みデータを使用）
     # ----------
+    # 列が存在しない場合は空列を追加
+    for col in ["株価", "PER", "PBR", "ROE(%)"]:
+        if col not in holding_df.columns:
+            holding_df[col] = 0
+    
     # 既存の株価データを使用（yfinanceは手動更新時のみ）
     for col in ["株価", "PER", "PBR", "ROE(%)"]:
-        if col in holding_df.columns:
-            holding_df[col] = pd.to_numeric(holding_df[col], errors="coerce")
+        holding_df[col] = pd.to_numeric(holding_df[col], errors="coerce").fillna(0)
     
-    # EPSは簡易計算（PER × 株価）で代用
+    # EPSは簡易計算（株価 / PER）で代用
     holding_df["EPS"] = holding_df.apply(
         lambda row: row["株価"] / row["PER"] if pd.notna(row["PER"]) and row["PER"] > 0 else 0,
         axis=1
