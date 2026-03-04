@@ -148,7 +148,6 @@ def save_df(sheet, df, retries=5):
 @st.cache_data(ttl=3600)
 def fetch_stock_data(code):
     try:
-        time.sleep(1)
         ticker = yf.Ticker(code)
         info = ticker.info
         name = info.get("longName") or info.get("shortName") or ""
@@ -571,22 +570,33 @@ with tab2:
 
     if st.button("株価を更新"):
         # 全銘柄の株価をyfinanceで取得
-        updated_df = holding_df.copy()
-        for idx, row in updated_df.iterrows():
-            c = row["コード"]
-            if idx > 0:
-                time.sleep(1.5)
-            name, price, per, pbr, roe, _, eps = fetch_stock_data(c)
-            if name:
-                updated_df.loc[idx, "銘柄名"] = name
-            if price:
-                updated_df.loc[idx, "株価"] = price
-            if per:
-                updated_df.loc[idx, "PER"] = per
-            if pbr:
-                updated_df.loc[idx, "PBR"] = pbr
-            if roe:
-                updated_df.loc[idx, "ROE(%)"] = roe
+        with st.spinner("株価を取得中..."):
+            updated_df = holding_df.copy()
+            total = len(updated_df)
+            progress_bar = st.progress(0)
+            
+            for idx, row in updated_df.iterrows():
+                c = row["コード"]
+                
+                # 全銘柄に対して3秒待機（レート制限回避）
+                time.sleep(3)
+                
+                name, price, per, pbr, roe, _, eps = fetch_stock_data(c)
+                if name:
+                    updated_df.loc[idx, "銘柄名"] = name
+                if price:
+                    updated_df.loc[idx, "株価"] = price
+                if per:
+                    updated_df.loc[idx, "PER"] = per
+                if pbr:
+                    updated_df.loc[idx, "PBR"] = pbr
+                if roe:
+                    updated_df.loc[idx, "ROE(%)"] = roe
+                
+                # プログレスバー更新
+                progress_bar.progress((idx + 1) / total)
+            
+            progress_bar.empty()
         
         # 現金行を追加して保存
         all_holdings_data = load_df(holding_sheet, HOLDING_COLS)
